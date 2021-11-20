@@ -1,4 +1,4 @@
-# Test file for "CustomLabProjectDrivers1"
+# Test file for "CustomLabProjectDrivers2"
 
 
 # commands.gdb provides the following functions for ease:

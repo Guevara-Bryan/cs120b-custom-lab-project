@@ -8,20 +8,20 @@
  *	I acknowledge all content contained herein, excluding template or example
  *	code, is my own original work.
  */
-#include <avr/io.h>
 #include "io.h"
-#include "timer.h"
+#include "SynchSMs.h"
 
 #ifdef _SIMULATE_
 #include "simAVRHeader.h"
 #endif
 
 int main(void) {
-    /* Insert DDR and PORT initializations */
-
-    /* Insert your solution below */
-    while (1) {
-
-    }
+//=========== PORTS INIT ================
+    DDRA = 0xFF; PORTA = 0x00;
+//=======================================
+    TimerSet(PeriodGCD);
+    TimerOn();
+    SynchSM_init();
+    while (1) {}
     return 1;
 }

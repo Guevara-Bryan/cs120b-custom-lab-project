@@ -4,11 +4,10 @@
 #include simAVRHeader.h
 #endif
 
-volatile unsigned char TimerFlag = 0;
-
 unsigned long _avr_timer_M = 1;
 unsigned long _avr_timer_cntcurr = 0;
 
+void TimerISR();
 
 void TimerOn() {
     TCCR1B = 0x0B;
@@ -22,10 +21,6 @@ void TimerOn() {
 
 void TimerOff() {
     TCCR1B = 0x00;
-}
-
-void TimerISR() {
-    TimerFlag = 1;
 }
 
 ISR(TIMER1_COMPA_vect) {
