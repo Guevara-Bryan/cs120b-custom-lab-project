@@ -14,24 +14,58 @@
 #include "task.h"
 #include <avr/io.h>
 #include "timer.h"
+#include "usart.h"
 #include "io.h"
 #include <stdlib.h>
 
 
 //============== SynchSMs setup ==============
 task* tasks; // array of size numTasks
-unsigned char numTasks = 1;
-unsigned short PeriodGCD = 1000;
+unsigned char numTasks = 2;
+unsigned short PeriodGCD = 300;
 //============================================
 
 //------------ Global Variables -------------
-
+unsigned char expecting_data = 0;
+unsigned char* data;
+const unsigned char notes[9] = "SCDEFGAB1"; //Just the notes I am using
 //-------------------------------------------
 
 //-------------- Tick functions --------------
-int BlinkLedSM(int state){
-    PORTA = !PORTA;
+int ReceiveChar(int state){
+    //expecting_data = 1 whenever we are on recording mode.
+    if(expecting_data){
+        LCD_Cursor(16);
+        LCD_WriteData('W');
+        //Dissable data reception until set again by another process.
+        expecting_data = 0;
+        //Get length of the data to be received
+        unsigned char data_length = USART_Receive();
+        // Only begin to receive data if the length is not zero
+        if(data_length > 0){
+            data = (unsigned char*) calloc(data_length, sizeof(char));
+            for(unsigned char i = 0; i < data_length; i++){
+                data[i] = USART_Receive();
+            }
 
+            for(unsigned char i = 0; i < data_length; i++){
+                LCD_Cursor(i + 1);
+                LCD_WriteData(notes[data[i]]);
+            }
+        } 
+    }
+    //Note free() data once no longer needed.
+    return state;
+}
+
+int EnableExpectingData(int state){
+    LCD_Cursor(16);
+    LCD_WriteData('N');
+    unsigned char input = ~PINA & 0x04;// Get the input from the joystick button
+    if(input){
+        LCD_ClearScreen();
+        expecting_data = 1;
+    }
     return state;
 }
 //--------------------------------------------
@@ -45,10 +79,13 @@ void SynchSM_init(){
     tasks[i].state = start;
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
-    tasks[i].Tick = &BlinkLedSM;
-    i++;
-
-    free(tasks);    
+    tasks[i].Tick = &ReceiveChar;
+    i++;  
+    tasks[i].state = start;
+    tasks[i].period = PeriodGCD;
+    tasks[i].elapsedTime = tasks[i].period;
+    tasks[i].Tick = &EnableExpectingData;
+    i++;  
 }
 //------------------------------------------------
 
