@@ -35,6 +35,14 @@ void USART_WaitForTransmit(){
     return;
 }
 
+void USART_FlusDataBuffer(){
+    unsigned char data_dump;
+    while (UCSR0A & (1 << RXC0)) {
+        data_dump = UDR0;
+    }
+    return;
+}
+
 void USART_Transmit(unsigned char data){
     // Wait until the data buffer is empty
     while ( !(UCSR0A & (1 << UDRE0)) ){}

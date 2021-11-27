@@ -16,9 +16,9 @@
 
 int main(void) {
 //=========== PORTS INIT ================
-    DDRA = 0xFF; PORTA = 0x00;
-    DDRB = 0xF0; PORTB = 0x0F;
-    DDRC = 0xFF; PORTC = 0x00;
+    DDRA = 0x00; PORTA = 0xFF;
+    DDRB = 0xFF; PORTB = 0x00;
+    DDRC = 0x00; PORTC = 0xFF;
     DDRD = 0xFF; PORTD = 0x00;
 //=======================================
     TimerSet(PeriodGCD);
