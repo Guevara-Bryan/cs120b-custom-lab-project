@@ -23,9 +23,11 @@ int main(void) {
 //=======================================
     TimerSet(PeriodGCD);
     TimerOn();
+    
     USART_Init(MYUBRR);
     reset_melody(&melody);
     PWM_on();
+
     SynchSM_init();
     while (1) {}
     return 1;

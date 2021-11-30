@@ -17,6 +17,8 @@
 #include "pwm.h"
 #include "usart.h"
 #include "melody.h"
+#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #define LED_PORT PORTB
@@ -36,98 +38,106 @@
 
 //============== SynchSMs setup ==============
 task* tasks; // array of size numTasks
-unsigned char numTasks = 7;
-unsigned short PeriodGCD = 100;
+unsigned char numTasks = 8;
+unsigned short PeriodGCD = 50;
+void set_note(unsigned char note);
 //============================================
 
 //------------ Global Variables -------------
-enum Status{recording, send_data, replay};
-unsigned char status[3] = {0, 0, 0};
+/*
+    PCR - Process Control Register
+    Allow you to set flags that let you control which processes the
+    program can execute.
+
+*/
+unsigned char PCR = 0x00;
+const unsigned char RECORDING = 0x01;
+const unsigned char REPLAY = 0x02;
+const unsigned char SEND_DATA = 0x04;
+const unsigned char PREPARE_DATA = 0x08;
 
 Melody melody;
 unsigned char current_note = silent;
 unsigned short current_start = 0;
 unsigned short current_duration = 0;
+unsigned char data[SIZEOFMELODY];
 //-------------------------------------------
 
 //-------------- Tick functions --------------
 int Transmit(int state){
-    if(status[send_data]){
+    if((PCR & SEND_DATA)){
         //disable data transmission until set again by another process.
-        status[send_data] = 0;
-        //Send the data block
-        for(unsigned char i = 0; i < melody.length; i++){
-            USART_Transmit(melody.notes[i]);
-            if (melody.notes[i] == 0){ break; } //Something went wrong
+        PCR &= ~SEND_DATA;
+        
+        for(unsigned short i = 0; i < SIZEOFMELODY; i++){
+            USART_Transmit(data[i]);
         }
-        // Signal end of data transfer
-        USART_Transmit(0);
+    }
+    return state;
+}
+
+int prepareData(int state){
+    if((PCR & PREPARE_DATA)){
+        PCR &= ~PREPARE_DATA;
+        PCR |= SEND_DATA;
+        
+
+        unsigned short number;
+        number = melody.time_length;
+        data[0] = melody.length;
+        data[1] = (char)number;
+        data[2] = (char)(number >> 8);
+        memcpy(&data[NOTES_OFFSET], melody.notes, MAX_NOTES);
+        // for (int i = 1; i < (MAX_NOTES * sizeof(short)); i++){
+        //     number = melody.times[i];
+        //     data[TIMES_OFFSET + i - 1] = (char)number;
+        //     data[TIMES_OFFSET + i] = (char)(number >> 8);
+        //     number = melody.durations[i];
+        //     data[DURATIONS_OFFSET + i - 1] = (char)number;
+        //     data[DURATIONS_OFFSET + i] = (char)(number >> 8);
+        // }
     }
     return state;
 }
 
 int PlayNoteSM(int state){
     unsigned char input = ~NOTES_PORT;
-    if (!status[replay]){
+    if (!(PCR & 0x0E)){
         switch(input){
             case 0x01:
-                current_note = C;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(C);
             break;
             case 0x02:
-                current_note = D;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(D);
             break;
             case 0x04:
-                current_note = E;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(E);
             break;
             case 0x08:
-                current_note = F;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(F);
             break;
             case 0x10:
-                current_note = G;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(G);
             break;
             case 0x20:
-                current_note = A;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(A);
             break;
             case 0x40:
-                current_note = B;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(B);
             break;
             case 0x80:
-                current_note = C1;
-                set_PWM(NOTES[current_note]);
-                if(current_start == 0){ current_start = melody.time_length; }
-                LED_PORT |= NOTES_LED;
+                set_note(C1);
             break;
             default:
                 LED_PORT &= ~NOTES_LED;
-                if(status[recording] && (current_note != silent)){
+                set_PWM(NOTES[silent]);
+                if((PCR & RECORDING) && (current_note != silent)){
                     current_duration = melody.time_length - current_start;
                     add_note(&melody, current_note, current_start, current_duration);
+                    current_note = silent;
+                    current_start = 0;
+                    current_duration = 0;
                 }
-                current_note = silent;
-                set_PWM(NOTES[current_note]);
-                current_start = 0;
-                current_duration = 0;
             break;
         }
     }
@@ -136,7 +146,7 @@ int PlayNoteSM(int state){
 }
 
 int updateMelodyLengthSM(int state){
-    if (status[recording]){
+    if ((PCR == RECORDING)){
         melody.time_length += PeriodGCD;
     }
     return state;
@@ -147,7 +157,7 @@ int ToggleRecordingSM(int state){
     unsigned char input = ~CTRL_PORT & RECORD_BUTTON;
 
     //Only record when not replaying
-    if(!status[replay]){
+    if(!(PCR & REPLAY)){
         switch(state){
             case Rstart:
                 state = off;
@@ -174,11 +184,11 @@ int ToggleRecordingSM(int state){
 
         switch(state){
             case presson:
-                status[recording] = 1;
+                PCR |= RECORDING;
                 LED_PORT |= RECORDING_LED;
                 break;
             case pressoff:
-                status[recording] = 0;
+                PCR &= ~RECORDING;
                 LED_PORT &= ~RECORDING_LED;
             default:
                 break;
@@ -190,26 +200,29 @@ int ToggleRecordingSM(int state){
 enum SendStates{Sstart, wait, send, hold };
 int SendDataSM(int state){
     unsigned char input = ~CTRL_PORT & SEND_DATA_BUTTON;
-    switch(state){
-        case Sstart:
-            state = wait;
-            break;
-        case wait:
-            state = input ? send : wait;        
-            break;
-        case send:
-            state = hold;
-            status[send_data] = 1;
-            LED_PORT |= SEND_LED;
-            break;
-        case hold:
-            state = input ? hold : wait;
-            LED_PORT |= SEND_LED;
-            if(state == wait) { LED_PORT &= ~SEND_LED; }
-            break;
-        default:
-            state = wait;
-            break;
+    // Only send data if no other process is active
+    if(!PCR){
+        switch(state){
+            case Sstart:
+                state = wait;
+                break;
+            case wait:
+                state = input ? send : wait;        
+                break;
+            case send:
+                state = hold;
+                PCR |= PREPARE_DATA;
+                LED_PORT |= SEND_LED;
+                break;
+            case hold:
+                state = input ? hold : wait;
+                LED_PORT |= SEND_LED;
+                if(state == wait) { LED_PORT &= ~SEND_LED; }
+                break;
+            default:
+                state = wait;
+                break;
+        }
     }
     return state;
 }
@@ -219,13 +232,7 @@ int ToggleReplaySM(int state){
     unsigned char input = ~CTRL_PORT & REPLAY_BUTTON;
 
     //Only replay if not recording
-    if(!status[recording]){
-        //If the melody ended go to the off state.
-        if (state == RSon && status[replay] == 0){
-            state = RSoff;
-            LED_PORT &= ~REPLAY_LED;
-        }
-
+    if(!(PCR & RECORDING)){
         switch(state){
             case RSstart:
                 state = RSoff;
@@ -249,11 +256,11 @@ int ToggleReplaySM(int state){
 
         switch(state){
             case RSpresson:
-                status[replay] = 1;
+                PCR |= REPLAY;
                 LED_PORT |= REPLAY_LED;
                 break;
             case RSpressoff:
-                status[replay] = 0;
+                PCR &= ~REPLAY;
                 LED_PORT &= ~REPLAY_LED;
                 break;
             default:
@@ -268,28 +275,34 @@ int ReplayMelodySM(int state){
     static unsigned char i = 0;
     static unsigned elapsedTime = 0;
 
-    if(status[replay]){
-        if (melody_timer < melody.time_length){
-            if(melody_timer >= melody.times[i]){
-                if(elapsedTime < melody.durations[i]){
+    if((PCR & REPLAY)){
+        if (melody_timer < melody.time_length){ // If melody is not over
+
+            if(melody_timer >= melody.times[i]){ // If a note was played at this time
+
+                if(elapsedTime < melody.durations[i]){ // Play note for its duration
                     set_PWM(NOTES[melody.notes[i]]);
                     elapsedTime += PeriodGCD;
                     LED_PORT |= NOTES_LED;
-                } else {
+                } else { // Silence while changing note
                     set_PWM(NOTES[silent]);
                     LED_PORT &= ~NOTES_LED;
                     elapsedTime = 0;
                     i++;
                 }
-            } else { // time in between notes.
+            } else { // Silent in-between times.
                 set_PWM(NOTES[silent]);
             }
             melody_timer += PeriodGCD;
-        } else { // End of melody, stop playing
+        } else { // End of melody. Restart melody.
             set_PWM(NOTES[silent]);
-            status[replay] = 0;
+            melody_timer = 0;
+            i = 0;
+            elapsedTime = 0;
         }
-    } else {
+
+
+    } else { // Reset everything
         melody_timer = 0;
         i = 0;
         elapsedTime = 0;
@@ -308,6 +321,11 @@ void SynchSM_init(){
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
     tasks[i].Tick = &Transmit;
+    i++;
+    tasks[i].state = generic_start;
+    tasks[i].period = PeriodGCD;
+    tasks[i].elapsedTime = tasks[i].period;
+    tasks[i].Tick = &prepareData;
     i++;
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
@@ -341,6 +359,13 @@ void SynchSM_init(){
     i++;
 }
 //------------------------------------------------
+
+void set_note(unsigned char note){
+    current_note = note;
+    set_PWM(NOTES[current_note]);
+    if (current_start == 0) { current_start = melody.time_length; }
+    LED_PORT |= NOTES_LED;
+}
 
 //################# Scheduler ####################
 void TimerISR()

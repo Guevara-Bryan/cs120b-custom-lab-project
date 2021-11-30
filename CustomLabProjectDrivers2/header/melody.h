@@ -1,8 +1,14 @@
 #ifndef MELODY_H
 #define MELODY_H
 #define MAX_NOTES 100 // Maximum notes per melody.
+#define SIZEOFMELODY sizeof(char) + sizeof(short) + (MAX_NOTES * sizeof(char)) + 2 * (MAX_NOTES * sizeof(short))
+#define NOTES_OFFSET 3
+#define TIMES_OFFSET 103
+#define DURATIONS_OFFSET 303
+
 enum Notes {silent, C, D, E, F, G, A, B, C1};
 const float NOTES[9] = {0.00, 261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.00, 523.25};
+const unsigned char* char_notes = "SCDEFGAB*";
 
 typedef struct Melody{
     // How many notes in the melody

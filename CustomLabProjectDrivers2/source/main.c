@@ -24,9 +24,15 @@ int main(void) {
 //=======================================
     TimerSet(PeriodGCD);
     TimerOn();
+
     USART_Init(MYUBRR);
+    reset_melody(&melody);
     LCD_init();
-    LCD_ClearScreen();
+    ADC_init();
+    
+    Menu_init(&main_menu, 4, 2);
+    Menu_load();
+
     SynchSM_init();
     while (1) {}
     return 1;
