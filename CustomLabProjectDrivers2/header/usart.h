@@ -5,6 +5,9 @@
 #define BAUD 9600
 #define MYUBRR FOSC/16/BAUD-1
 
+#define TRANSMISSION_REQUEST 0X01
+#define TRANSMISSION_ACKNOWLEDGEMENT 0xFF
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdlib.h>
@@ -33,6 +36,17 @@ void USART_WaitForReceive(){
 void USART_WaitForTransmit(){
     while ( !(UCSR0A & (1 << TXC0)) ){}
     return;
+}
+
+//Checks the Receive flag
+unsigned char USART_CheckTransmitFlag(){
+    return (UCSR0A & (1 << TXC0));
+}
+
+
+//Checks the receive flag
+unsigned char USART_CheckReceiveFlag(){
+    return (UCSR0A & (1 << RXC0));
 }
 
 void USART_FlusDataBuffer(){

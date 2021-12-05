@@ -17,9 +17,7 @@
 #include "pwm.h"
 #include "usart.h"
 #include "melody.h"
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
+
 
 #define LED_PORT PORTB
 #define NOTES_PORT PINA
@@ -54,13 +52,12 @@ unsigned char PCR = 0x00;
 const unsigned char RECORDING = 0x01;
 const unsigned char REPLAY = 0x02;
 const unsigned char SEND_DATA = 0x04;
-const unsigned char PREPARE_DATA = 0x08;
+const unsigned char RECEIVE_DATA = 0x08;
 
 Melody melody;
 unsigned char current_note = silent;
 unsigned short current_start = 0;
 unsigned short current_duration = 0;
-unsigned char data[SIZEOFMELODY];
 //-------------------------------------------
 
 //-------------- Tick functions --------------
@@ -68,34 +65,34 @@ int Transmit(int state){
     if((PCR & SEND_DATA)){
         //disable data transmission until set again by another process.
         PCR &= ~SEND_DATA;
-        
-        for(unsigned short i = 0; i < SIZEOFMELODY; i++){
-            USART_Transmit(data[i]);
+
+        if(!melody.is_serialized) { serialize_melody(&melody, melody.serialized); }
+
+        USART_Transmit(TRANSMISSION_REQUEST);
+        unsigned char code_received = USART_Receive();
+        if(code_received == TRANSMISSION_ACKNOWLEDGEMENT){
+            for(unsigned short i = 0; i < SIZEOFMELODY; i++){
+                USART_Transmit(melody.serialized[i]);
+            }
         }
     }
     return state;
 }
 
-int prepareData(int state){
-    if((PCR & PREPARE_DATA)){
-        PCR &= ~PREPARE_DATA;
-        PCR |= SEND_DATA;
-        
+int Receive(int state){
+    unsigned char code_received;
+    if(USART_CheckReceiveFlag()){
+        code_received = USART_Receive();
+        if(code_received == TRANSMISSION_REQUEST){      
+            reset_melody(&melody);
 
-        unsigned short number;
-        number = melody.time_length;
-        data[0] = melody.length;
-        data[1] = (char)number;
-        data[2] = (char)(number >> 8);
-        memcpy(&data[NOTES_OFFSET], melody.notes, MAX_NOTES);
-        // for (int i = 1; i < (MAX_NOTES * sizeof(short)); i++){
-        //     number = melody.times[i];
-        //     data[TIMES_OFFSET + i - 1] = (char)number;
-        //     data[TIMES_OFFSET + i] = (char)(number >> 8);
-        //     number = melody.durations[i];
-        //     data[DURATIONS_OFFSET + i - 1] = (char)number;
-        //     data[DURATIONS_OFFSET + i] = (char)(number >> 8);
-        // }
+            USART_Transmit(TRANSMISSION_ACKNOWLEDGEMENT);
+            for(unsigned short i = 0; i < SIZEOFMELODY; i++){
+                melody.serialized[i] = USART_Receive();
+            }
+            melody.is_serialized = 1;
+            deserialize_melody(&melody, melody.serialized);
+        }
     }
     return state;
 }
@@ -190,6 +187,7 @@ int ToggleRecordingSM(int state){
             case pressoff:
                 PCR &= ~RECORDING;
                 LED_PORT &= ~RECORDING_LED;
+                serialize_melody(&melody, &melody.serialized);
             default:
                 break;
         }
@@ -211,7 +209,7 @@ int SendDataSM(int state){
                 break;
             case send:
                 state = hold;
-                PCR |= PREPARE_DATA;
+                PCR |= SEND_DATA;
                 LED_PORT |= SEND_LED;
                 break;
             case hold:
@@ -325,7 +323,7 @@ void SynchSM_init(){
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
-    tasks[i].Tick = &prepareData;
+    tasks[i].Tick = &Receive;
     i++;
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
