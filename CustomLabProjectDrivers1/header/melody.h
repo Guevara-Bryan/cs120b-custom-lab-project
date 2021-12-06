@@ -7,9 +7,6 @@
 #define DURATIONS_OFFSET 303
 
 #include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-
 
 enum Notes {silent, C, D, E, F, G, A, B, C1};
 const float NOTES[9] = {0.00, 261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.00, 523.25};
@@ -32,6 +29,11 @@ typedef struct Melody{
     unsigned char is_serialized;
 }Melody;
 
+union SandC
+{
+    unsigned short s;
+    unsigned char bytes[2];
+} temp;
 
 void reset_melody(Melody * _melody){
     for(unsigned char i = 0; i < MAX_NOTES; i++){
@@ -58,22 +60,22 @@ void serialize_melody(Melody* melody, char* data){
 
     memset(data, 0, SIZEOFMELODY);
 
-    memcpy(&data[NOTES_OFFSET], melody->notes, MAX_NOTES);
-    
-    unsigned short number;
-    number = melody->time_length;
     data[0] = melody->length;
-    data[1] = (char)number;
-    data[2] = (char)(number >> 8);
-    for (int i = 1; i < (MAX_NOTES * sizeof(short)); i += sizeof(short)){
-        number = melody->times[i];
-        data[TIMES_OFFSET + i - 1] = (char)number;
-        data[TIMES_OFFSET + i] = (char)(number >> 8);
 
+    temp.s = melody->time_length;
+    data[1] = temp.bytes[0];
+    data[2] = temp.bytes[1];
+    memcpy(&data[NOTES_OFFSET], melody->notes, MAX_NOTES);
+    int j = 0;
+    for(int i = 0; i < MAX_NOTES; i++){
+        temp.s = melody->times[i];
+        j = sizeof(short) * i;
+        data[TIMES_OFFSET + j] = temp.bytes[0];
+        data[TIMES_OFFSET + j + 1] = temp.bytes[1];
 
-        number = melody->durations[i];
-        data[DURATIONS_OFFSET + i - 1] = (char)number;
-        data[DURATIONS_OFFSET + i] = (char)(number >> 8);
+        temp.s = melody->durations[i];
+        data[DURATIONS_OFFSET + j] = temp.bytes[0];
+        data[DURATIONS_OFFSET + j + 1] = temp.bytes[1];
     }
     melody->is_serialized = 1;
 }
@@ -83,20 +85,21 @@ void deserialize_melody(Melody* melody, const char* data){
     reset_melody(melody);
 
     memcpy(melody->notes, &data[NOTES_OFFSET], MAX_NOTES);
+
     melody->length = data[0];
-    melody->time_length = (short)data[2];
-    melody->time_length <<= 8;
-    melody->time_length |= (short)data[1];
+    temp.bytes[1] = data[2];
+    temp.bytes[0] = data[1];
+    melody->time_length = temp.s;
+    int j = 0;
+    for(int i = 0; i < MAX_NOTES; i++){
+        j = sizeof(short) * i;
+        temp.bytes[0] = data[TIMES_OFFSET + j + 1];
+        temp.bytes[1] = data[TIMES_OFFSET + j];
+        melody->times[i] = temp.s;
 
-    for(int i = 1; i < (MAX_NOTES * sizeof(short)); i += sizeof(short)){
-        melody->times[i] = (short)data[TIMES_OFFSET + i];
-        melody->times[i] <<= 8;
-        melody->times[i] |= (short)data[TIMES_OFFSET + i - 1];
-
-        // set the hight byte
-        melody->durations[i] = data[DURATIONS_OFFSET + i];
-        melody->durations[i] <<= 8;
-        melody->durations[i - 1] |= data[DURATIONS_OFFSET + i - 1];
+        temp.bytes[0] = data[DURATIONS_OFFSET + j + 1];
+        temp.bytes[1] = data[DURATIONS_OFFSET + j];
+        melody->durations[i] = temp.s;
     }
 }
 #endif

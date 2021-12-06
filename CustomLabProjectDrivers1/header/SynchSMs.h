@@ -17,6 +17,7 @@
 #include "pwm.h"
 #include "usart.h"
 #include "melody.h"
+#include <stdlib.h>
 
 
 #define LED_PORT PORTB
@@ -66,7 +67,7 @@ int Transmit(int state){
         //disable data transmission until set again by another process.
         PCR &= ~SEND_DATA;
 
-        if(!melody.is_serialized) { serialize_melody(&melody, melody.serialized); }
+        serialize_melody(&melody, melody.serialized);
 
         USART_Transmit(TRANSMISSION_REQUEST);
         unsigned char code_received = USART_Receive();
@@ -84,14 +85,14 @@ int Receive(int state){
     if(USART_CheckReceiveFlag()){
         code_received = USART_Receive();
         if(code_received == TRANSMISSION_REQUEST){      
-            reset_melody(&melody);
+            memset(melody.serialized, 0, SIZEOFMELODY);
 
             USART_Transmit(TRANSMISSION_ACKNOWLEDGEMENT);
             for(unsigned short i = 0; i < SIZEOFMELODY; i++){
                 melody.serialized[i] = USART_Receive();
             }
             melody.is_serialized = 1;
-            deserialize_melody(&melody, melody.serialized);
+            deserialize_melody(&melody, &melody.serialized);
         }
     }
     return state;

@@ -19,6 +19,7 @@
 #include "melody.h"
 #include "joystick.h"
 #include "screens.h"
+#include <stdio.h>
 
 //Joystick definitions
 #define J_LEFT 0x01
@@ -72,7 +73,7 @@ int Transmit(int state){
         //disable data transmission until set again by another process.
         PCR &= ~SEND_DATA;
 
-        if(!melody.is_serialized) { serialize_melody(&melody, melody.serialized); }
+        serialize_melody(&melody, melody.serialized); 
 
         USART_Transmit(TRANSMISSION_REQUEST);
         unsigned char code_received = USART_Receive();
@@ -90,7 +91,6 @@ int Receive(int state){
     if(USART_CheckReceiveFlag()){
         code_received = USART_Receive();
         if(code_received == TRANSMISSION_REQUEST){      
-            reset_melody(&melody);
             memset(melody.serialized, 0, SIZEOFMELODY);
 
             USART_Transmit(TRANSMISSION_ACKNOWLEDGEMENT);
@@ -159,6 +159,8 @@ int updateScreen(int state){
             for(char i = 0; i < 5; i++){
                 if(melody.notes[i] != silent){
                     update_char(&main_menu.screens[main_menu.current_screen], 10 + i, char_notes[melody.notes[i]]);
+                } else {
+                    update_char(&main_menu.screens[main_menu.current_screen], 10 + i, ' ');
                 }
             }
             PCR |= REFRESH_SCREEN;
@@ -213,6 +215,10 @@ int navigateScreen(int state){
                 move_up(&main_menu.screens[main_menu.current_screen].cursor_pointer);
             } else if(JSR & J_DOWN){
                 move_down(&main_menu.screens[main_menu.current_screen].cursor_pointer);
+            }
+
+            if(JSR & J_SELECT){
+                PCR |= SEND_DATA;
             }
             break;
         case options:

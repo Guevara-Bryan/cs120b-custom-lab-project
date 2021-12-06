@@ -32,7 +32,7 @@ int main(void) {
     LCD_init();
     ADC_init();
     PCR |= REFRESH_SCREEN;
-    Menu_init(&main_menu, 4, 0);
+    Menu_init(&main_menu, 4, 2);
     Menu_load();
 
     SynchSM_init();
