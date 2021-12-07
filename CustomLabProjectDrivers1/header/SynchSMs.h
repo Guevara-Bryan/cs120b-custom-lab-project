@@ -32,6 +32,7 @@
 #define RECORDING_LED 0x04
 #define REPLAY_LED 0x02
 #define SEND_LED 0x07
+#define MELODY_LED 0x08
 
 
 
@@ -93,6 +94,11 @@ int Receive(int state){
             }
             melody.is_serialized = 1;
             deserialize_melody(&melody, &melody.serialized);
+            if(melody.length > 0){
+                    LED_PORT |= MELODY_LED;
+                }else{
+                    LED_PORT &= ~MELODY_LED;
+                }
         }
     }
     return state;
@@ -164,6 +170,7 @@ int ToggleRecordingSM(int state){
                 state = input ? presson : off;
                 if(state == presson){
                     reset_melody(&melody); //starting a new melody.
+                    LED_PORT &= MELODY_LED;
                 }
                 break;
             case presson:
@@ -189,6 +196,11 @@ int ToggleRecordingSM(int state){
                 PCR &= ~RECORDING;
                 LED_PORT &= ~RECORDING_LED;
                 serialize_melody(&melody, &melody.serialized);
+                if(melody.length > 0){
+                    LED_PORT |= MELODY_LED;
+                }else{
+                    LED_PORT &= ~MELODY_LED;
+                }
             default:
                 break;
         }

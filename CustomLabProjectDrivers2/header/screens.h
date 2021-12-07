@@ -8,20 +8,19 @@
 #define SCREEN_LENGTH 29
 
 typedef struct Screen{
-    char content[2][SCREEN_LENGTH];
-    unsigned char frame;
+    char content[SCREEN_LENGTH];
     Cursor cursor_pointer;
 } Screen;
 
-void Screen_init(Screen * _screen, unsigned char frame, const char *data){
-    _screen->frame = frame;
-    strcpy(_screen->content[_screen->frame], data);
-    cursor_init(&_screen->cursor_pointer, 1, 15);
+void Screen_init(Screen * _screen, const char *data){
+    strcpy(_screen->content, data);
+
+    cursor_init(&_screen->cursor_pointer, 0,0);
 }
 
 void update_char(Screen* _screen, unsigned char pos, unsigned char character){
     if(pos < SCREEN_LENGTH && pos >= 0){
-        _screen->content[0][pos] = character;
+        _screen->content[pos] = character;
     }
 }
 
@@ -51,16 +50,6 @@ void previousScreen(Menu* menu){
     menu->current_screen = menu->current_screen - 1 >= 0 ? menu->current_screen - 1 : menu->size - 1;
 }
 
-//circular scroll down
-void scroll_down(Menu* menu, unsigned char screen){
-    menu->screens[screen].frame = (menu->screens[screen].frame + 1) % 2;
-}
-
-//circular scroll up
-void scroll_up(Menu* menu, unsigned char screen){
-    menu->screens[screen].frame = (menu->screens[screen].frame == 1) ? 0 : menu->screens[screen].frame + 1;
-}
-
 Screen * getScreen(Menu* menu, unsigned char pos){
     if(pos >= 0 && pos < menu->size){
         return &menu->screens[pos];
@@ -68,12 +57,12 @@ Screen * getScreen(Menu* menu, unsigned char pos){
     return 0;
 }
 
-void update_screen(Menu* menu, unsigned char screen, unsigned char frame, char * data){
-    strcpy(menu->screens[screen].content[frame], data);
+void update_screen(Menu* menu, unsigned char screen, char * data){
+    strcpy(menu->screens[screen].content, data);
 }
 
 // Returns the content of the current screen
-char * getCurrentScreenContent(Menu* menu, unsigned char frame){
-    return menu->screens[menu->current_screen].content[frame];
+char * getCurrentScreenContent(Menu* menu){
+    return menu->screens[menu->current_screen].content;
 }
 #endif

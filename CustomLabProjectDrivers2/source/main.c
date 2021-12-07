@@ -12,9 +12,6 @@
 #ifdef _SIMULATE_
 #include "simAVRHeader.h"
 #endif
-#include "usart.h"
-#include "io.h"
-#include "cursor.h"
 #include "SynchSMs.h"
 
 int main(void) {
@@ -32,7 +29,7 @@ int main(void) {
     LCD_init();
     ADC_init();
     PCR |= REFRESH_SCREEN;
-    Menu_init(&main_menu, 4, 2);
+    Menu_init(&main_menu, 3, 1);
     Menu_load();
 
     SynchSM_init();

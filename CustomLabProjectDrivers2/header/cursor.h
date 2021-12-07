@@ -46,5 +46,4 @@ void move_right(Cursor * cursor){
 
 
 
-
 #endif

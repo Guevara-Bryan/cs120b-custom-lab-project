@@ -20,6 +20,7 @@
 #include "joystick.h"
 #include "screens.h"
 #include <stdio.h>
+#include <avr/eeprom.h>
 
 //Joystick definitions
 #define J_LEFT 0x01
@@ -32,7 +33,7 @@
 
 //============== SynchSMs setup ==============
 task* tasks; // array of size numTasks
-unsigned char numTasks = 8;
+unsigned char numTasks = 9;
 unsigned short PeriodGCD = 250;
 //============================================
 
@@ -56,12 +57,11 @@ unsigned char JSR;
 */
 unsigned char PCR = 0x00;
 const unsigned char SEND_DATA = 0x01;
-const unsigned char RECEIVE_DATA = 0x02;
 const unsigned char REFRESH_SCREEN = 0x04;
 
 
 // 4 different screens with 28 characters. Last 4 are custom characters.
-enum MenuScreens { receive, browse, details, options };
+enum MenuScreens { browse, details, options };
 Menu main_menu;
 
 Melody melody;
@@ -73,7 +73,7 @@ int Transmit(int state){
         //disable data transmission until set again by another process.
         PCR &= ~SEND_DATA;
 
-        serialize_melody(&melody, melody.serialized); 
+        serialize_melody(&melody, melody.serialized);
 
         USART_Transmit(TRANSMISSION_REQUEST);
         unsigned char code_received = USART_Receive();
@@ -99,7 +99,6 @@ int Receive(int state){
             }
             melody.is_serialized = 1;
             deserialize_melody(&melody, &melody.serialized);
-            scroll_down(&main_menu, receive);
             PCR |= REFRESH_SCREEN;
         }
     }
@@ -150,21 +149,20 @@ int GetButton(int state){
 
 int updateScreen(int state){
     switch(main_menu.current_screen){
-        case receive:
-            break;
         case browse:
             break;
         case details:
-            sprintf(main_menu.screens[main_menu.current_screen].content, "Notes[%02u]:ABGCD>Time:%-03usec", melody.length, (melody.time_length / 1000));
-            for(char i = 0; i < 5; i++){
-                if(melody.notes[i] != silent){
-                    update_char(&main_menu.screens[main_menu.current_screen], 10 + i, char_notes[melody.notes[i]]);
-                } else {
-                    update_char(&main_menu.screens[main_menu.current_screen], 10 + i, ' ');
+            if((PCR & REFRESH_SCREEN)){
+                sprintf(main_menu.screens[details].content, "Notes[%02u]-------Time:%-03usec", melody.length, (melody.time_length / 1000));
+                for(char i = 0; i < 7; i++){
+                    if(melody.notes[i] != silent){
+                        update_char(&main_menu.screens[main_menu.current_screen], 9 + i, char_notes[melody.notes[i]]);
+                    } else {
+                        update_char(&main_menu.screens[main_menu.current_screen], 9 + i, ' ');
+                    }
                 }
             }
-            PCR |= REFRESH_SCREEN;
-            break;
+            break; 
         case options:
             break;
         default:
@@ -174,28 +172,21 @@ int updateScreen(int state){
 
 int navigateScreen(int state){
     switch(main_menu.current_screen){
-        case receive: // This screen shows you whether a melody has been received or not
-            if(JSR & J_LEFT){
-                previousScreen(&main_menu);
-                PCR |= REFRESH_SCREEN;
-            } else if(JSR & J_RIGHT){
-                nextScreen(&main_menu);
-                PCR |= REFRESH_SCREEN;
-            }
-            break;
         case browse:
             if(JSR & J_LEFT){
-                if(main_menu.screens[main_menu.current_screen].cursor_pointer.x == 0){
+                if(main_menu.screens[browse].cursor_pointer.x == 0){
                     previousScreen(&main_menu);
+                    cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 3);
                     PCR |= REFRESH_SCREEN;
-                } else {
+                }else{
                     move_left(&main_menu.screens[main_menu.current_screen].cursor_pointer);
                 }
             } else if(JSR & J_RIGHT){
-                if(main_menu.screens[main_menu.current_screen].cursor_pointer.x == (screen_width-1)){
+                if(main_menu.screens[browse].cursor_pointer.x == screen_width - 1){
                     nextScreen(&main_menu);
+                    LCD_Cursor(0); // hide cursor;
                     PCR |= REFRESH_SCREEN;
-                } else {
+                }else{
                     move_right(&main_menu.screens[main_menu.current_screen].cursor_pointer);
                 }
             } else if(JSR & J_UP){
@@ -207,35 +198,27 @@ int navigateScreen(int state){
         case details:
             if(JSR & J_LEFT){
                 previousScreen(&main_menu);
+                cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 0);
                 PCR |= REFRESH_SCREEN;
             } else if(JSR & J_RIGHT){
                 nextScreen(&main_menu);
+                cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 3);
                 PCR |= REFRESH_SCREEN;
             } else if(JSR & J_UP){
                 move_up(&main_menu.screens[main_menu.current_screen].cursor_pointer);
             } else if(JSR & J_DOWN){
                 move_down(&main_menu.screens[main_menu.current_screen].cursor_pointer);
             }
-
-            if(JSR & J_SELECT){
-                PCR |= SEND_DATA;
-            }
             break;
         case options:
             if(JSR & J_LEFT){
-                if(main_menu.screens[main_menu.current_screen].cursor_pointer.x == 0){
-                    previousScreen(&main_menu);
-                    PCR |= REFRESH_SCREEN;
-                } else {
-                    move_left(&main_menu.screens[main_menu.current_screen].cursor_pointer);
-                }
+                previousScreen(&main_menu);
+                LCD_Cursor(0); // hide cursor
+                PCR |= REFRESH_SCREEN;
             } else if(JSR & J_RIGHT){
-                if(main_menu.screens[main_menu.current_screen].cursor_pointer.x == (screen_width-1)){
-                    nextScreen(&main_menu);
-                    PCR |= REFRESH_SCREEN;
-                } else {
-                    move_right(&main_menu.screens[main_menu.current_screen].cursor_pointer);
-                }
+                nextScreen(&main_menu);
+                cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 0);
+                PCR |= REFRESH_SCREEN;
             } else if(JSR & J_UP){
                 move_up(&main_menu.screens[main_menu.current_screen].cursor_pointer);
             } else if(JSR & J_DOWN){
@@ -248,25 +231,41 @@ int navigateScreen(int state){
     return state;
 }
 
+enum ReplayStates{RStart, wait, send, hold };
+int replayMelodySM(int state){
+    unsigned char input = (JSR & J_SELECT);
+    if(main_menu.current_screen == details){
+        switch(state){
+            case RStart:
+                state = wait;
+                break;
+            case wait:
+                state = input ? send : wait;        
+                break;
+            case send:
+                state = hold;
+                PCR |= SEND_DATA;
+                break;
+            case hold:
+                state = input ? hold : wait;
+                break;
+            default:
+                state = wait;
+                break;
+        }
+    }
+    return state;
+}
+
 int DisplayScreen(int state){
     if((PCR & REFRESH_SCREEN)){
         PCR &= ~REFRESH_SCREEN;
-        LCD_DisplayString(1, getCurrentScreenContent(&main_menu, main_menu.screens[main_menu.current_screen].frame));
+        LCD_DisplayString(1, getCurrentScreenContent(&main_menu));
     }
     LCD_Cursor(main_menu.screens[main_menu.current_screen].cursor_pointer.linear);
     return state;
 }
 //--------------------------------------------
-
-// Load the different screens into the menu
-void Menu_load(){
-    Screen_init(&main_menu.screens[receive], 0, "  ...Receiving              ");
-    update_screen(&main_menu, receive, 1,       "  Data Received             ");
-    Screen_init(&main_menu.screens[browse],  0, "123456789ABCDEFGHIJKLMNOPQR>");
-    Screen_init(&main_menu.screens[details], 0, "Notes[%u]:ABGCD>Time:%usec");
-    Screen_init(&main_menu.screens[options], 0, "  Play  Delete    Stop  save");
-}
-
 
 //---------------- Initialize SMS ----------------
 void SynchSM_init(){
@@ -312,10 +311,21 @@ void SynchSM_init(){
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
+    tasks[i].Tick = &replayMelodySM;
+    i++;  
+    tasks[i].state = generic_start;
+    tasks[i].period = PeriodGCD;
+    tasks[i].elapsedTime = tasks[i].period;
     tasks[i].Tick = &DisplayScreen;
     i++;  
 }
 //------------------------------------------------
+
+void Menu_load(){
+    Screen_init(&main_menu.screens[browse], ">                           ");
+    Screen_init(&main_menu.screens[options], "   1-Save          2-Delete ");
+    PCR |= REFRESH_SCREEN;
+}
 
 //################# Scheduler ####################
 void TimerISR()
