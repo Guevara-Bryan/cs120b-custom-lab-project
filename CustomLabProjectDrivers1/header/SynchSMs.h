@@ -16,7 +16,7 @@
 #include "timer.h"
 #include "pwm.h"
 #include "usart.h"
-#include "melody.h"
+#include "eeprom.h"
 #include <stdlib.h>
 
 
@@ -56,7 +56,8 @@ const unsigned char REPLAY = 0x02;
 const unsigned char SEND_DATA = 0x04;
 const unsigned char RECEIVE_DATA = 0x08;
 
-Melody melody;
+
+ProgramStatus program;
 unsigned char current_note = silent;
 unsigned short current_start = 0;
 unsigned short current_duration = 0;
@@ -68,13 +69,13 @@ int Transmit(int state){
         //disable data transmission until set again by another process.
         PCR &= ~SEND_DATA;
 
-        serialize_melody(&melody, melody.serialized);
+        serialize_melody(program.melody, program.melody->serialized);
 
         USART_Transmit(TRANSMISSION_REQUEST);
-        unsigned char code_received = USART_Receive();
-        if(code_received == TRANSMISSION_ACKNOWLEDGEMENT){
+        unsigned char data_request_code = USART_Receive();
+        if(data_request_code == TRANSMISSION_ACKNOWLEDGEMENT){
             for(unsigned short i = 0; i < SIZEOFMELODY; i++){
-                USART_Transmit(melody.serialized[i]);
+                USART_Transmit(program.melody->serialized[i]);
             }
         }
     }
@@ -82,23 +83,41 @@ int Transmit(int state){
 }
 
 int Receive(int state){
-    unsigned char code_received;
     if(USART_CheckReceiveFlag()){
-        code_received = USART_Receive();
-        if(code_received == TRANSMISSION_REQUEST){      
-            memset(melody.serialized, 0, SIZEOFMELODY);
+        unsigned char data_request_code = USART_Receive();
+        if(data_request_code == TRANSMISSION_REQUEST){      
+            memset(program.melody->serialized, 0, SIZEOFMELODY);
 
             USART_Transmit(TRANSMISSION_ACKNOWLEDGEMENT);
             for(unsigned short i = 0; i < SIZEOFMELODY; i++){
-                melody.serialized[i] = USART_Receive();
+                program.melody->serialized[i] = USART_Receive();
             }
-            melody.is_serialized = 1;
-            deserialize_melody(&melody, &melody.serialized);
-            if(melody.length > 0){
+            program.melody->is_serialized = 1;
+            deserialize_melody(program.melody, program.melody->serialized);
+            if(program.melody->length > 0){
                     LED_PORT |= MELODY_LED;
                 }else{
                     LED_PORT &= ~MELODY_LED;
                 }
+        } 
+        else if (data_request_code == EEPROM_LOAD_REQUEST){
+            USART_Transmit(EEPROM_LOAD_ACKNOWLEDGEMENT);
+            unsigned char i = USART_Receive();
+            eeprom_load_melody(&program, i);
+            PCR |= SEND_DATA;
+            if(program.melody->length > 0){
+                LED_PORT |= MELODY_LED;
+            }else{ 
+                LED_PORT &= ~MELODY_LED;
+            }
+        } 
+        else if (data_request_code == EEPROM_SAVE_REQUEST){
+            USART_Transmit(EEPROM_SAVE_ACKNOWLEDGEMENT);
+            eeprom_save_melody(&program);
+        }
+        else if (data_request_code == EEPROM_META_REQUEST){
+            USART_Transmit(EEPROM_META_ACKNOWLEDGEMENT);
+            USART_Transmit(program.num_melodies);
         }
     }
     return state;
@@ -136,8 +155,8 @@ int PlayNoteSM(int state){
                 LED_PORT &= ~NOTES_LED;
                 set_PWM(NOTES[silent]);
                 if((PCR & RECORDING) && (current_note != silent)){
-                    current_duration = melody.time_length - current_start;
-                    add_note(&melody, current_note, current_start, current_duration);
+                    current_duration = program.melody->time_length - current_start;
+                    add_note(program.melody, current_note, current_start, current_duration);
                     current_note = silent;
                     current_start = 0;
                     current_duration = 0;
@@ -151,7 +170,7 @@ int PlayNoteSM(int state){
 
 int updateMelodyLengthSM(int state){
     if ((PCR == RECORDING)){
-        melody.time_length += PeriodGCD;
+        program.melody->time_length += PeriodGCD;
     }
     return state;
 }
@@ -159,7 +178,6 @@ int updateMelodyLengthSM(int state){
 enum RecordingStates {Rstart, off, presson, on, pressoff };
 int ToggleRecordingSM(int state){   
     unsigned char input = ~CTRL_PORT & RECORD_BUTTON;
-
     //Only record when not replaying
     if(!(PCR & REPLAY)){
         switch(state){
@@ -169,7 +187,7 @@ int ToggleRecordingSM(int state){
             case off:
                 state = input ? presson : off;
                 if(state == presson){
-                    reset_melody(&melody); //starting a new melody.
+                    reset_melody(program.melody); //starting a new program.melody->
                     LED_PORT &= MELODY_LED;
                 }
                 break;
@@ -195,8 +213,8 @@ int ToggleRecordingSM(int state){
             case pressoff:
                 PCR &= ~RECORDING;
                 LED_PORT &= ~RECORDING_LED;
-                serialize_melody(&melody, &melody.serialized);
-                if(melody.length > 0){
+                serialize_melody(program.melody, program.melody->serialized);
+                if(program.melody->length > 0){
                     LED_PORT |= MELODY_LED;
                 }else{
                     LED_PORT &= ~MELODY_LED;
@@ -287,12 +305,12 @@ int ReplayMelodySM(int state){
     static unsigned elapsedTime = 0;
 
     if((PCR & REPLAY)){
-        if (melody_timer < melody.time_length){ // If melody is not over
+        if (melody_timer < program.melody->time_length){ // If program.melody is not over
 
-            if(melody_timer >= melody.times[i]){ // If a note was played at this time
+            if(melody_timer >= program.melody->times[i]){ // If a note was played at this time
 
-                if(elapsedTime < melody.durations[i]){ // Play note for its duration
-                    set_PWM(NOTES[melody.notes[i]]);
+                if(elapsedTime < program.melody->durations[i]){ // Play note for its duration
+                    set_PWM(NOTES[program.melody->notes[i]]);
                     elapsedTime += PeriodGCD;
                     LED_PORT |= NOTES_LED;
                 } else { // Silence while changing note
@@ -305,7 +323,7 @@ int ReplayMelodySM(int state){
                 set_PWM(NOTES[silent]);
             }
             melody_timer += PeriodGCD;
-        } else { // End of melody. Restart melody.
+        } else { // End of program.melody-> Restart program.melody->
             set_PWM(NOTES[silent]);
             melody_timer = 0;
             i = 0;
@@ -374,7 +392,7 @@ void SynchSM_init(){
 void set_note(unsigned char note){
     current_note = note;
     set_PWM(NOTES[current_note]);
-    if (current_start == 0) { current_start = melody.time_length; }
+    if (current_start == 0) { current_start = program.melody->time_length; }
     LED_PORT |= NOTES_LED;
 }
 

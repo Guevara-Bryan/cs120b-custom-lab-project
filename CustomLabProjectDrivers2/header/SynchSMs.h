@@ -16,11 +16,12 @@
 #include "timer.h"
 #include "usart.h"
 #include "io.h"
-#include "melody.h"
 #include "joystick.h"
 #include "screens.h"
+#include "melody.h"
 #include <stdio.h>
-#include <avr/eeprom.h>
+#include "custom_chars.h"
+
 
 //Joystick definitions
 #define J_LEFT 0x01
@@ -33,7 +34,7 @@
 
 //============== SynchSMs setup ==============
 task* tasks; // array of size numTasks
-unsigned char numTasks = 9;
+unsigned char numTasks = 11;
 unsigned short PeriodGCD = 250;
 //============================================
 
@@ -59,12 +60,15 @@ unsigned char PCR = 0x00;
 const unsigned char SEND_DATA = 0x01;
 const unsigned char REFRESH_SCREEN = 0x04;
 
-
-// 4 different screens with 28 characters. Last 4 are custom characters.
+// 3 different screens with 28 characters. Last 4 are custom characters.
 enum MenuScreens { browse, details, options };
 Menu main_menu;
 
+// coms. utilities
+const char* labels = "123456789ABCDEFGHIJKLMNOPQRSTUVW";
 Melody melody;
+unsigned char num_melodies = 0;
+unsigned char data_communication_code;
 //-------------------------------------------
 
 //-------------- Tick functions --------------
@@ -72,14 +76,44 @@ int Transmit(int state){
     if((PCR & SEND_DATA)){
         //disable data transmission until set again by another process.
         PCR &= ~SEND_DATA;
+        if(data_communication_code == TRANSMISSION_REQUEST){
+            serialize_melody(&melody, melody.serialized);
 
-        serialize_melody(&melody, melody.serialized);
+            USART_Transmit(TRANSMISSION_REQUEST);
+            unsigned char code_received = USART_Receive();
+            if(code_received == TRANSMISSION_ACKNOWLEDGEMENT){
+                for(unsigned short i = 0; i < SIZEOFMELODY; i++){
+                    USART_Transmit(melody.serialized[i]);
+                }
+            }
+        }
+        else if(data_communication_code == EEPROM_LOAD_REQUEST){
+            USART_Transmit(EEPROM_LOAD_REQUEST);
+            data_communication_code = USART_Receive();
+            if(data_communication_code == EEPROM_LOAD_ACKNOWLEDGEMENT){
+                USART_Transmit(main_menu.screens[main_menu.current_screen].cursor_pointer.linear - 1);
+                PCR |= REFRESH_SCREEN;
+                main_menu.current_screen = details;
+            }
+        }
+        else if(data_communication_code == EEPROM_SAVE_REQUEST){
+            USART_Transmit(EEPROM_SAVE_REQUEST);
+            data_communication_code = USART_Receive();
+            if (data_communication_code == EEPROM_SAVE_ACKNOWLEDGEMENT){
+                main_menu.current_screen = browse;
+                PCR |= REFRESH_SCREEN;
+                PCR |= SEND_DATA;
+                data_communication_code = EEPROM_META_REQUEST;
+            }
 
-        USART_Transmit(TRANSMISSION_REQUEST);
-        unsigned char code_received = USART_Receive();
-        if(code_received == TRANSMISSION_ACKNOWLEDGEMENT){
-            for(unsigned short i = 0; i < SIZEOFMELODY; i++){
-                USART_Transmit(melody.serialized[i]);
+        }
+        else if(data_communication_code == EEPROM_META_REQUEST){
+            USART_Transmit(EEPROM_META_REQUEST);
+            data_communication_code = USART_Receive();
+            if(data_communication_code == EEPROM_META_ACKNOWLEDGEMENT){
+                num_melodies = USART_Receive();
+                PCR |= REFRESH_SCREEN;
+                main_menu.current_screen = browse;
             }
         }
     }
@@ -98,7 +132,7 @@ int Receive(int state){
                 melody.serialized[i] = USART_Receive();
             }
             melody.is_serialized = 1;
-            deserialize_melody(&melody, &melody.serialized);
+            deserialize_melody(&melody, melody.serialized);
             PCR |= REFRESH_SCREEN;
         }
     }
@@ -148,11 +182,16 @@ int GetButton(int state){
 }
 
 int updateScreen(int state){
-    switch(main_menu.current_screen){
-        case browse:
-            break;
-        case details:
-            if((PCR & REFRESH_SCREEN)){
+    if((PCR & REFRESH_SCREEN)){
+        switch(main_menu.current_screen){
+            case browse:
+                if(num_melodies > 0){
+                    for(char i = 0; i < num_melodies; i++){
+                        update_char(&main_menu.screens[browse], i, labels[i]);
+                    }
+                }
+                break;
+            case details:
                 sprintf(main_menu.screens[details].content, "Notes[%02u]-------Time:%-03usec", melody.length, (melody.time_length / 1000));
                 for(char i = 0; i < 7; i++){
                     if(melody.notes[i] != silent){
@@ -161,12 +200,11 @@ int updateScreen(int state){
                         update_char(&main_menu.screens[main_menu.current_screen], 9 + i, ' ');
                     }
                 }
-            }
-            break; 
-        case options:
-            break;
-        default:
-            break;
+                break;
+            case options:
+                strcpy(main_menu.screens[options].content, "   1-Save                   ");
+                break;
+        }
     }
 }
 
@@ -176,7 +214,7 @@ int navigateScreen(int state){
             if(JSR & J_LEFT){
                 if(main_menu.screens[browse].cursor_pointer.x == 0){
                     previousScreen(&main_menu);
-                    cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 3);
+                    cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 3, 0);
                     PCR |= REFRESH_SCREEN;
                 }else{
                     move_left(&main_menu.screens[main_menu.current_screen].cursor_pointer);
@@ -199,10 +237,10 @@ int navigateScreen(int state){
             if(JSR & J_LEFT){
                 previousScreen(&main_menu);
                 cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 0);
-                PCR |= REFRESH_SCREEN;
+                PCR |=REFRESH_SCREEN;
             } else if(JSR & J_RIGHT){
                 nextScreen(&main_menu);
-                cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 3);
+                cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 3, 0);
                 PCR |= REFRESH_SCREEN;
             } else if(JSR & J_UP){
                 move_up(&main_menu.screens[main_menu.current_screen].cursor_pointer);
@@ -218,7 +256,7 @@ int navigateScreen(int state){
             } else if(JSR & J_RIGHT){
                 nextScreen(&main_menu);
                 cursor_init(&main_menu.screens[main_menu.current_screen].cursor_pointer, 0, 0);
-                PCR |= REFRESH_SCREEN;
+                PCR |=REFRESH_SCREEN;
             } else if(JSR & J_UP){
                 move_up(&main_menu.screens[main_menu.current_screen].cursor_pointer);
             } else if(JSR & J_DOWN){
@@ -231,26 +269,84 @@ int navigateScreen(int state){
     return state;
 }
 
-enum ReplayStates{RStart, wait, send, hold };
+enum saveStates{ Sstart, Swait, Ssave, Shold };
+int saveMelodySM(int state){
+    if(main_menu.current_screen == options){
+        unsigned char input = (JSR & J_SELECT);
+        switch(state){
+            case Sstart:
+                state = Swait;
+                break;
+            case Swait:
+                state = input ? Ssave: Swait;
+                break;
+            case Ssave:
+                PCR |= SEND_DATA;
+                data_communication_code = EEPROM_SAVE_REQUEST;
+                state = Shold;
+                break;
+            case Shold:
+                state = input ? Shold : Swait;
+                if(state == Swait){
+                    PCR |= REFRESH_SCREEN;
+                    main_menu.current_screen = details;
+                }
+                break;
+        }
+    }
+    return state;
+}
+
+enum getStates{ Gstart, Gwait, Gget, Ghold };
+int getMelodySM(int state){
+    if(main_menu.current_screen == browse){
+        unsigned char input = (JSR & J_SELECT);
+        switch(state){
+            case Gstart:
+                state = Gwait;
+                break;
+            case Gwait:
+                state = input ? Gget : Gwait;
+                break;
+            case Gget:
+                PCR |= SEND_DATA;
+                data_communication_code = EEPROM_LOAD_REQUEST;
+                state = Ghold;
+                break;
+            case Ghold:
+                state = input ? Ghold : Gwait;
+                if(state == Gwait){
+                    PCR |= REFRESH_SCREEN;
+                    main_menu.current_screen = details;
+                }
+                break;
+        }
+    }
+    return state;
+}
+
+
+enum ReplayStates{RStart, rwait, rsend, rhold };
 int replayMelodySM(int state){
     unsigned char input = (JSR & J_SELECT);
     if(main_menu.current_screen == details){
         switch(state){
             case RStart:
-                state = wait;
+                state = rwait;
                 break;
-            case wait:
-                state = input ? send : wait;        
+            case rwait:
+                state = input ? rsend : rwait;        
                 break;
-            case send:
-                state = hold;
+            case rsend:
+                state = rhold;
                 PCR |= SEND_DATA;
+                data_communication_code = TRANSMISSION_REQUEST;
                 break;
-            case hold:
-                state = input ? hold : wait;
+            case rhold:
+                state = input ? rhold : rwait;
                 break;
             default:
-                state = wait;
+                state = rwait;
                 break;
         }
     }
@@ -260,7 +356,23 @@ int replayMelodySM(int state){
 int DisplayScreen(int state){
     if((PCR & REFRESH_SCREEN)){
         PCR &= ~REFRESH_SCREEN;
-        LCD_DisplayString(1, getCurrentScreenContent(&main_menu));
+        LCD_ClearScreen();
+        LCD_DisplayString(1, main_menu.screens[main_menu.current_screen].content);
+        LCD_LoadCustomCharacter(browse_light, 0);
+        LCD_LoadCustomCharacter(details_light, 1);
+        LCD_LoadCustomCharacter(options_light, 2);
+        LCD_LoadCustomCharacter(browse_dark, 3);
+        LCD_LoadCustomCharacter(details_dark, 4);
+        LCD_LoadCustomCharacter(options_dark, 5);
+
+
+        for(unsigned char i = 0; i < 3; i++){
+            if(i == main_menu.current_screen){
+                LCD_WriteCustomCharacter(i + 3, 30 + i);
+            } else {
+                LCD_WriteCustomCharacter(i, 30 + i);
+            }
+        }
     }
     LCD_Cursor(main_menu.screens[main_menu.current_screen].cursor_pointer.linear);
     return state;
@@ -297,6 +409,11 @@ void SynchSM_init(){
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
     tasks[i].Tick = &GetButton;
+    i++;   
+    tasks[i].state = generic_start;
+    tasks[i].period = PeriodGCD;
+    tasks[i].elapsedTime = tasks[i].period;
+    tasks[i].Tick = &navigateScreen;
     i++;  
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
@@ -306,8 +423,13 @@ void SynchSM_init(){
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
-    tasks[i].Tick = &navigateScreen;
+    tasks[i].Tick = &saveMelodySM;
     i++;  
+    tasks[i].state = generic_start;
+    tasks[i].period = PeriodGCD;
+    tasks[i].elapsedTime = tasks[i].period;
+    tasks[i].Tick = &getMelodySM;
+    i++; 
     tasks[i].state = generic_start;
     tasks[i].period = PeriodGCD;
     tasks[i].elapsedTime = tasks[i].period;
@@ -320,12 +442,6 @@ void SynchSM_init(){
     i++;  
 }
 //------------------------------------------------
-
-void Menu_load(){
-    Screen_init(&main_menu.screens[browse], ">                           ");
-    Screen_init(&main_menu.screens[options], "   1-Save          2-Delete ");
-    PCR |= REFRESH_SCREEN;
-}
 
 //################# Scheduler ####################
 void TimerISR()

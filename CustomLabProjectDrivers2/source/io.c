@@ -49,8 +49,20 @@ void LCD_WriteData(unsigned char Data) {
    delay_ms(1);
 }
 
+void LCD_LoadCustomCharacter(unsigned char * character, unsigned char pos){
+   LCD_WriteCommand(0x40 + (pos * 8));
+   for(unsigned char i = 0; i < 8; i++){
+      LCD_WriteData(character[i]);
+   }
+   LCD_WriteCommand(0x80);
+}
+
+void LCD_WriteCustomCharacter(unsigned char loc, unsigned char screen_pos){
+   LCD_Cursor(screen_pos);
+   LCD_WriteData(loc);
+}
+
 void LCD_DisplayString( unsigned char column, const unsigned char* string) {
-   LCD_ClearScreen();
    unsigned char c = column;
    while(*string) {
       LCD_Cursor(c++);
@@ -78,4 +90,3 @@ void delay_ms(int miliSec) //for 8 Mhz crystal
    asm("nop");
   }
 }
-

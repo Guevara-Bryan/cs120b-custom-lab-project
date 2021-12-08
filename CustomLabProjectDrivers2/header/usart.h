@@ -5,12 +5,16 @@
 #define BAUD 9600
 #define MYUBRR FOSC/16/BAUD-1
 
-#define TRANSMISSION_REQUEST 0X01
-#define TRANSMISSION_ACKNOWLEDGEMENT 0xFF
+#define TRANSMISSION_REQUEST 0X01 // Request to transfer the loaded melody
+#define EEPROM_LOAD_REQUEST 0X02 // Request to load a melody from EEPROM
+#define EEPROM_SAVE_REQUEST 0x03 // Request to save loaded melody on EEPROM
+#define EEPROM_META_REQUEST 0x04 // Request transfer meta-data
 
-#include <avr/io.h>
-#include <avr/interrupt.h>
-#include <stdlib.h>
+#define TRANSMISSION_ACKNOWLEDGEMENT 0xFF
+#define EEPROM_LOAD_ACKNOWLEDGEMENT 0XFE
+#define EEPROM_SAVE_ACKNOWLEDGEMENT 0xFD
+#define EEPROM_META_ACKNOWLEDGEMENT 0xFC
+
 
 
 void USART_Init(unsigned int ubrr){
@@ -44,7 +48,7 @@ unsigned char USART_CheckTransmitFlag(){
 }
 
 
-//Checks the receive flag
+//Checks the transmit flag
 unsigned char USART_CheckReceiveFlag(){
     return (UCSR0A & (1 << RXC0));
 }

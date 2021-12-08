@@ -25,9 +25,9 @@ int main(void) {
     TimerOn();
     
     USART_Init(MYUBRR);
-    reset_melody(&melody);
     PWM_on();
 
+    Program_init(&program);
     SynchSM_init();
     while (1) {}
     return 1;

@@ -23,16 +23,12 @@ int main(void) {
 //=======================================
     TimerSet(PeriodGCD);
     TimerOn();
-
     USART_Init(MYUBRR);
-    reset_melody(&melody);
     LCD_init();
     ADC_init();
-    PCR |= REFRESH_SCREEN;
-    Menu_init(&main_menu, 3, 1);
-    Menu_load();
-
+    Menu_init(&main_menu, 3, details);
     SynchSM_init();
+    PCR |= REFRESH_SCREEN;
     while (1) {}
     return 1;
 }
